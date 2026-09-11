@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scope Creep Sentinel</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar-title">
+      <h1>Scope Creep Sentinel</h1>
+      <p class="subtitle">Watching the line between the agreement and the ask.</p>
+    </div>
+
+    <dl class="stat-strip" id="stat-strip">
+      <div class="stat">
+        <dt>Unbilled hours</dt>
+        <dd id="stat-hours">—</dd>
+      </div>
+
+      <div class="stat">
+        <dt>Unbilled value</dt>
+        <dd id="stat-cost">—</dd>
+      </div>
+
+      <div class="stat">
+        <dt>Scope-creep requests</dt>
+        <dd id="stat-count">—</dd>
+      </div>
+
+      <div class="stat">
+        <dt>Total scope-creep hours</dt>
+        <dd id="stat-creep-hours">—</dd>
+      </div>
+
+      <div class="stat">
+        <dt>Total scope-creep value</dt>
+        <dd id="stat-creep-cost">—</dd>
+      </div>
+    </dl>
+  </header>
+
+  <main class="layout">
+
+    <!-- ================================================================ -->
+    <!-- AGREEMENT                                                        -->
+    <!-- ================================================================ -->
+
+    <section
+      class="panel"
+      id="panel-agreement"
+      aria-labelledby="agreement-heading"
+    >
+      <h2 id="agreement-heading">The Agreement</h2>
+
+      <div class="field-row">
+        <span class="field-label">Project</span>
+        <span class="field-value" id="sow-project-name">Loading…</span>
+      </div>
+
+      <div class="field-row">
+        <span class="field-label">Hourly rate</span>
+        <span class="field-value" id="sow-hourly-rate">—</span>
+      </div>
+
+      <div class="revision-block">
+        <div class="field-row">
+          <span class="field-label">Revisions used</span>
+          <span class="field-value" id="sow-revisions-text">—</span>
+        </div>
+
+        <div
+          class="revision-meter"
+          role="img"
+          aria-label="Revisions used"
+        >
+          <div
+            class="revision-meter-fill"
+            id="revision-meter-fill"
+          ></div>
+        </div>
+      </div>
+
+      <div class="scope-columns">
+        <div class="scope-column">
+          <h3 class="scope-heading scope-heading-in">Included</h3>
+          <ul class="scope-list" id="sow-included"></ul>
+        </div>
+
+        <div class="scope-column">
+          <h3 class="scope-heading scope-heading-out">Excluded</h3>
+          <ul class="scope-list" id="sow-excluded"></ul>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ================================================================ -->
+    <!-- CLIENT EMAIL SIMULATOR                                           -->
+    <!-- ================================================================ -->
+
+    <section
+      class="panel"
+      id="panel-email"
+      aria-labelledby="email-heading"
+    >
+      <h2 id="email-heading">Incoming Client Email</h2>
+
+      <p class="panel-description">
+        Simulate a client email arriving in the freelancer's inbox.
+        The Sentinel will extract the request and analyze it.
+      </p>
+
+      <form id="email-form">
+
+        <div class="form-group">
+          <label
+            class="field-label"
+            for="email-sender"
+          >
+            Client email
+          </label>
+
+          <input
+            type="email"
+            id="email-sender"
+            placeholder="client@example.com"
+            value="client@example.com"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label
+            class="field-label"
+            for="email-subject"
+          >
+            Subject
+          </label>
+
+          <input
+            type="text"
+            id="email-subject"
+            placeholder="New feature request"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label
+            class="field-label"
+            for="email-body"
+          >
+            Email body
+          </label>
+
+          <textarea
+            id="email-body"
+            rows="6"
+            placeholder="Hi, could you also add a loyalty and rewards program to the website?"
+            required
+          ></textarea>
+        </div>
+
+        <button
+          type="submit"
+          id="email-analyze-btn"
+          class="btn btn-primary"
+        >
+          Process client email
+        </button>
+      </form>
+
+      <p
+        class="error-text"
+        id="email-error"
+        hidden
+      ></p>
+    </section>
+
+
+    <!-- ================================================================ -->
+    <!-- MANUAL REQUEST                                                   -->
+    <!-- ================================================================ -->
+
+    <section
+      class="panel"
+      id="panel-workflow"
+      aria-labelledby="workflow-heading"
+    >
+      <h2 id="workflow-heading">Manual Request</h2>
+
+      <p class="panel-description">
+        Test a client request directly without the email wrapper.
+      </p>
+
+      <form id="request-form">
+        <label
+          class="field-label"
+          for="request-text"
+        >
+          What the client asked for
+        </label>
+
+        <textarea
+          id="request-text"
+          rows="3"
+          placeholder="e.g. Can you also create a mobile app for the website?"
+          required
+        ></textarea>
+
+        <button
+          type="submit"
+          id="analyze-btn"
+          class="btn btn-outline"
+        >
+          Analyze request
+        </button>
+      </form>
+
+      <p
+        class="error-text"
+        id="request-error"
+        hidden
+      ></p>
+    </section>
+
+
+    <!-- ================================================================ -->
+    <!-- SENTINEL ANALYSIS                                                -->
+    <!-- ================================================================ -->
+
+    <section
+      class="panel panel-wide"
+      id="panel-result"
+      aria-labelledby="result-heading"
+    >
+      <h2 id="result-heading">Sentinel Analysis</h2>
+
+      <div
+        class="result"
+        id="result"
+        hidden
+      >
+
+        <!-- Source -->
+        <div
+          class="result-source"
+          id="result-source"
+          hidden
+        >
+          <span class="source-label">Source</span>
+          <span
+            class="source-value"
+            id="result-source-value"
+          ></span>
+        </div>
+
+
+        <!-- Classification + risk -->
+        <div class="result-header">
+          <span
+            class="badge"
+            id="classification-badge"
+          >
+            —
+          </span>
+
+          <span
+            class="risk-tag"
+            id="risk-tag"
+          ></span>
+        </div>
+
+
+        <!-- Main reasoning -->
+        <p
+          class="reasoning"
+          id="reasoning-text"
+        ></p>
+
+
+        <!-- SOW evidence -->
+        <div
+          class="analysis-detail-grid"
+          id="analysis-detail-grid"
+        >
+
+          <div class="analysis-detail">
+            <span class="field-label">
+              Matched SOW item
+            </span>
+
+            <span
+              class="analysis-detail-value"
+              id="matched-sow-item"
+            >
+              —
+            </span>
+          </div>
+
+          <div class="analysis-detail">
+            <span class="field-label">
+              Decision requirement
+            </span>
+
+            <span
+              class="analysis-detail-value"
+              id="decision-requirement"
+            >
+              —
+            </span>
+          </div>
+
+        </div>
+
+
+        <!-- Effort + cost -->
+        <div class="impact-row">
+          <div class="impact">
+            <span class="field-label">
+              Est. additional effort
+            </span>
+
+            <span
+              class="impact-value"
+              id="impact-hours"
+            >
+              —
+            </span>
+          </div>
+
+          <div class="impact">
+            <span class="field-label">
+              Est. additional cost
+            </span>
+
+            <span
+              class="impact-value"
+              id="impact-cost"
+            >
+              —
+            </span>
+          </div>
+        </div>
+
+
+        <!-- Decision reasoning -->
+        <div
+          class="decision-reasoning"
+          id="decision-reasoning"
+          hidden
+        >
+          <h3 class="decision-reasoning-heading">
+            Why a decision is needed
+          </h3>
+
+          <p
+            class="decision-reasoning-text"
+            id="decision-reasoning-text"
+          ></p>
+        </div>
+
+
+        <!-- In-scope -->
+        <div
+          id="in-scope-note"
+          class="in-scope-note"
+          hidden
+        >
+          Within scope — no decision needed. Logged automatically.
+        </div>
+
+
+        <!-- Human decision -->
+        <div
+          id="decision-block"
+          class="decision-block"
+          hidden
+        >
+          <h3 class="decision-heading">
+            Choose a response
+          </h3>
+
+          <div class="decision-option">
+            <div class="decision-option-header">
+              <span class="decision-label">
+                Bill it
+              </span>
+
+              <button
+                type="button"
+                class="btn btn-outline"
+                data-decision="BILL_IT"
+              >
+                Send &amp; log
+              </button>
+            </div>
+
+            <p
+              class="draft-message"
+              id="message-bill"
+            ></p>
+          </div>
+
+
+          <div class="decision-option">
+            <div class="decision-option-header">
+              <span class="decision-label">
+                Negotiate it
+              </span>
+
+              <button
+                type="button"
+                class="btn btn-outline"
+                data-decision="NEGOTIATE_IT"
+              >
+                Send &amp; log
+              </button>
+            </div>
+
+            <p
+              class="draft-message"
+              id="message-negotiate"
+            ></p>
+          </div>
+
+
+          <div class="decision-option">
+            <div class="decision-option-header">
+              <span class="decision-label">
+                Decline it
+              </span>
+
+              <button
+                type="button"
+                class="btn btn-outline"
+                data-decision="DECLINE_IT"
+              >
+                Send &amp; log
+              </button>
+            </div>
+
+            <p
+              class="draft-message"
+              id="message-decline"
+            ></p>
+          </div>
+
+        </div>
+
+
+        <!-- Confirmation -->
+        <div
+          id="decision-confirmation"
+          class="decision-confirmation"
+          hidden
+        >
+          <h3 class="decision-heading">
+            Sent
+          </h3>
+
+          <p id="confirmation-text"></p>
+        </div>
+
+      </div>
+
+
+      <div
+        class="result-empty"
+        id="result-empty"
+      >
+        Submit a client email or manual request to see the Sentinel's analysis.
+      </div>
+
+    </section>
+
+
+    <!-- ================================================================ -->
+    <!-- HISTORY                                                           -->
+    <!-- ================================================================ -->
+
+    <section
+      class="panel panel-wide"
+      id="panel-history"
+      aria-labelledby="history-heading"
+    >
+      <h2 id="history-heading">Scope History</h2>
+
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Source</th>
+            <th>Client</th>
+            <th>Request</th>
+            <th>Classification</th>
+            <th>Hours</th>
+            <th>Cost</th>
+            <th>Decision</th>
+          </tr>
+        </thead>
+
+        <tbody id="history-body">
+          <tr>
+            <td
+              colspan="8"
+              class="history-empty"
+            >
+              No requests logged yet.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+  </main>
+
+  <script src="/web/app.js"></script>
+</body>
+</html>
