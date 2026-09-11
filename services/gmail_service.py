@@ -31,6 +31,19 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
 
+# Default Gmail search query.
+#
+# We start with unread inbox mail and exclude common Gmail categories
+# that are unlikely to contain client requests.
+DEFAULT_GMAIL_QUERY = (
+    "in:inbox "
+    "is:unread "
+    "-category:promotions "
+    "-category:social "
+    "-category:updates "
+    "-category:forums"
+)
+
 
 class GmailService:
     """Small Gmail API wrapper for reading incoming client emails."""
@@ -51,7 +64,11 @@ class GmailService:
                 SCOPES,
             )
 
-        if credentials and credentials.expired and credentials.refresh_token:
+        if (
+            credentials
+            and credentials.expired
+            and credentials.refresh_token
+        ):
             credentials.refresh(Request())
 
         if not credentials or not credentials.valid:
@@ -88,15 +105,23 @@ class GmailService:
         max_results: int = 10,
     ) -> list[IncomingClientEmail]:
         """
-        Return unread Gmail messages as IncomingClientEmail objects.
+        Return likely client emails from the unread inbox.
+
+        The Gmail query can be overridden with the
+        GMAIL_CLIENT_QUERY environment variable.
         """
+
+        query = os.environ.get(
+            "GMAIL_CLIENT_QUERY",
+            DEFAULT_GMAIL_QUERY,
+        ).strip()
 
         response = (
             self._service.users()
             .messages()
             .list(
                 userId="me",
-                labelIds=["INBOX", "UNREAD"],
+                q=query,
                 maxResults=max_results,
             )
             .execute()
@@ -125,10 +150,66 @@ class GmailService:
 
             email = self._parse_message(full_message)
 
-            if email is not None:
+            if (
+                email is not None
+                and self._is_likely_client_email(email)
+            ):
                 results.append(email)
 
         return results
+
+    def _is_likely_client_email(
+        self,
+        email: IncomingClientEmail,
+    ) -> bool:
+        """
+        Reject obvious automated/newsletter messages before they reach
+        the Strands analysis workflow.
+
+        This is only a pre-filter. The agent will make the final decision
+        about whether a candidate contains a project-related request.
+        """
+
+        sender = email.sender.lower().strip()
+        subject = email.subject.lower().strip()
+
+        automated_sender_markers = (
+            "no-reply",
+            "noreply",
+            "notifications",
+            "notification",
+            "mailer-daemon",
+            "donotreply",
+            "do-not-reply",
+        )
+
+        automated_subject_markers = (
+            "unsubscribe",
+            "newsletter",
+            "payment reminder",
+            "performance report",
+            "deployment",
+            "verification code",
+            "security alert",
+            "your bill",
+            "your invoice",
+            "weekly digest",
+            "monthly digest",
+        )
+
+        if any(
+            marker in sender
+            for marker in automated_sender_markers
+        ):
+            return False
+
+        if any(
+            marker in subject
+            for marker in automated_subject_markers
+        ):
+            return False
+
+        return True
 
     def _parse_message(
         self,
