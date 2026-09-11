@@ -44,6 +44,10 @@ document.addEventListener("DOMContentLoaded", () => {
     .addEventListener("submit", onEmailSubmit);
 
   document
+    .getElementById("gmail-check-btn")
+    .addEventListener("click", onGmailCheck);
+
+  document
     .querySelectorAll("[data-decision]")
     .forEach((btn) => {
       btn.addEventListener("click", () =>
@@ -187,22 +191,16 @@ async function onAnalyzeSubmit(event) {
   event.preventDefault();
 
   const textarea =
-    document.getElementById(
-      "request-text"
-    );
+    document.getElementById("request-text");
 
   const requestText =
     textarea.value.trim();
 
   const errorEl =
-    document.getElementById(
-      "request-error"
-    );
+    document.getElementById("request-error");
 
   const analyzeBtn =
-    document.getElementById(
-      "analyze-btn"
-    );
+    document.getElementById("analyze-btn");
 
   errorEl.hidden = true;
 
@@ -259,7 +257,7 @@ async function onAnalyzeSubmit(event) {
 
 
 /* ====================================================================== */
-/* Client email                                                           */
+/* Simulated email                                                        */
 /* ====================================================================== */
 
 async function onEmailSubmit(event) {
@@ -338,7 +336,7 @@ async function onEmailSubmit(event) {
     errorEl.textContent =
       getFriendlyError(
         err,
-        "Could not process the client email."
+        "Could not process the simulated client email."
       );
 
     errorEl.hidden = false;
@@ -347,7 +345,122 @@ async function onEmailSubmit(event) {
   } finally {
     emailBtn.disabled = false;
     emailBtn.textContent =
-      "Process client email";
+      "Process simulated email";
+  }
+}
+
+
+/* ====================================================================== */
+/* Real Gmail                                                            */
+/* ====================================================================== */
+
+async function onGmailCheck() {
+  const button =
+    document.getElementById(
+      "gmail-check-btn"
+    );
+
+  const errorEl =
+    document.getElementById(
+      "gmail-error"
+    );
+
+  const statusEl =
+    document.getElementById(
+      "gmail-status"
+    );
+
+  errorEl.hidden = true;
+  statusEl.hidden = false;
+
+  button.disabled = true;
+  button.textContent =
+    "Checking Gmail…";
+
+  statusEl.textContent =
+    "Checking the connected inbox and screening candidate emails…";
+
+  setResultLoading();
+
+  try {
+    const result =
+      await postJSON(
+        "/api/gmail/check",
+        {}
+      );
+
+    const processed =
+      result.processed_client_requests || 0;
+
+    const checked =
+      result.candidate_emails_checked || 0;
+
+    const skipped =
+      result.skipped_non_client_emails || 0;
+
+    if (
+      processed > 0 &&
+      result.results &&
+      result.results.length > 0
+    ) {
+      const analysis =
+        result.results[0];
+
+      currentAnalysis = analysis;
+
+      renderResult(
+        analysis,
+        {
+          source: "Connected Gmail",
+          sender:
+            analysis.request_text
+              ?.split("\n")[0]
+              ?.replace(
+                /^Subject:\s*/i,
+                ""
+              ) || "",
+        }
+      );
+
+      statusEl.textContent =
+        `Found a client request after checking ${checked} candidate email(s).`;
+
+      await loadHistory();
+      await loadProject();
+
+      return;
+    }
+
+    showResultEmpty();
+
+    statusEl.textContent =
+      `No client request found. Checked ${checked} candidate email(s) and skipped ${skipped} non-client email(s).`;
+
+    await loadHistory();
+    await loadProject();
+
+  } catch (err) {
+    console.error(
+      "Gmail check failed:",
+      err
+    );
+
+    showResultEmpty();
+
+    errorEl.textContent =
+      getFriendlyError(
+        err,
+        "Could not check Gmail."
+      );
+
+    errorEl.hidden = false;
+
+    statusEl.textContent =
+      "Gmail check did not complete.";
+  } finally {
+    button.disabled = false;
+    button.textContent =
+      "Check Gmail for client requests";
   }
 }
 
@@ -358,24 +471,17 @@ async function onEmailSubmit(event) {
 
 function setResultLoading() {
   const resultEl =
-    document.getElementById(
-      "result"
-    );
+    document.getElementById("result");
 
   const emptyEl =
-    document.getElementById(
-      "result-empty"
-    );
+    document.getElementById("result-empty");
 
   resultEl.hidden = false;
   emptyEl.hidden = true;
 
-  const sourceEl =
-    document.getElementById(
-      "result-source"
-    );
-
-  sourceEl.hidden = true;
+  document.getElementById(
+    "result-source"
+  ).hidden = true;
 
   document.getElementById(
     "classification-badge"
@@ -408,13 +514,11 @@ function setResultLoading() {
 
   document.getElementById(
     "impact-hours"
-  ).textContent =
-    "—";
+  ).textContent = "—";
 
   document.getElementById(
     "impact-cost"
-  ).textContent =
-    "—";
+  ).textContent = "—";
 
   document.getElementById(
     "decision-reasoning"
@@ -450,14 +554,10 @@ function renderResult(
   metadata = null
 ) {
   const resultEl =
-    document.getElementById(
-      "result"
-    );
+    document.getElementById("result");
 
   const emptyEl =
-    document.getElementById(
-      "result-empty"
-    );
+    document.getElementById("result-empty");
 
   resultEl.hidden = false;
   emptyEl.hidden = true;
@@ -468,9 +568,7 @@ function renderResult(
   /* ------------------------------------------------------------------ */
 
   const sourceEl =
-    document.getElementById(
-      "result-source"
-    );
+    document.getElementById("result-source");
 
   const sourceValueEl =
     document.getElementById(
@@ -483,14 +581,20 @@ function renderResult(
     metadata &&
     metadata.source === "Client email"
   ) {
-    const details = [
-      metadata.source,
-      metadata.sender,
-      metadata.subject,
-    ].filter(Boolean);
-
     sourceValueEl.textContent =
-      details.join(" · ");
+      [
+        metadata.source,
+        metadata.sender,
+        metadata.subject,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+  } else if (
+    metadata &&
+    metadata.source === "Connected Gmail"
+  ) {
+    sourceValueEl.textContent =
+      "Connected Gmail · Real inbox";
   } else {
     sourceValueEl.textContent =
       "Manual request";
@@ -595,18 +699,22 @@ function renderResult(
     analysis.decision_reasoning &&
     analysis.requires_decision
   ) {
-    decisionReasoningEl.hidden = false;
+    decisionReasoningEl.hidden =
+      false;
 
     decisionReasoningTextEl.textContent =
       analysis.decision_reasoning;
   } else {
-    decisionReasoningEl.hidden = true;
-    decisionReasoningTextEl.textContent = "";
+    decisionReasoningEl.hidden =
+      true;
+
+    decisionReasoningTextEl.textContent =
+      "";
   }
 
 
   /* ------------------------------------------------------------------ */
-  /* In-scope / decision state                                          */
+  /* Decision state                                                     */
   /* ------------------------------------------------------------------ */
 
   const inScopeNote =
@@ -637,7 +745,7 @@ function renderResult(
 
 
   /* ------------------------------------------------------------------ */
-  /* Generated response options                                         */
+  /* Generated messages                                                 */
   /* ------------------------------------------------------------------ */
 
   if (analysis.messages) {
@@ -693,23 +801,14 @@ async function onDecisionClick(
     ).hidden = true;
 
     document.getElementById(
-      "decision-reasoning"
+      "decision-confirmation"
     ).hidden = false;
-
-    const confirmation =
-      document.getElementById(
-        "decision-confirmation"
-      );
-
-    confirmation.hidden = false;
 
     document.getElementById(
       "confirmation-text"
     ).textContent =
       result.sent_message;
 
-
-    /* Clear request forms. */
     document.getElementById(
       "request-text"
     ).value = "";
@@ -724,8 +823,6 @@ async function onDecisionClick(
 
     currentAnalysis = null;
 
-
-    /* Refresh dashboard. */
     await loadHistory();
     await loadProject();
 
@@ -888,7 +985,9 @@ function formatTimestamp(
 
 function escapeHtml(text) {
   const div =
-    document.createElement("div");
+    document.createElement(
+      "div"
+    );
 
   div.textContent =
     text ?? "";
@@ -903,8 +1002,7 @@ function getFriendlyError(
 ) {
   if (
     error &&
-    error.message &&
-    error.message.includes(":")
+    error.message
   ) {
     return error.message;
   }
@@ -957,7 +1055,7 @@ async function postJSON(
           `${detail}: ${errorBody.detail}`;
       }
     } catch (_) {
-      // Keep default error.
+      // Keep the default error.
     }
 
     throw new Error(detail);

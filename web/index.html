@@ -42,6 +42,7 @@
     </dl>
   </header>
 
+
   <main class="layout">
 
     <!-- ================================================================ -->
@@ -98,6 +99,45 @@
 
 
     <!-- ================================================================ -->
+    <!-- REAL GMAIL                                                        -->
+    <!-- ================================================================ -->
+
+    <section
+      class="panel"
+      id="panel-gmail"
+      aria-labelledby="gmail-heading"
+    >
+      <h2 id="gmail-heading">Connected Gmail</h2>
+
+      <p class="panel-description">
+        Check the connected Gmail inbox for unread client requests.
+        Scope Creep Sentinel filters obvious automated mail first, then
+        uses the Intake Agent before running scope analysis.
+      </p>
+
+      <button
+        type="button"
+        id="gmail-check-btn"
+        class="btn btn-primary"
+      >
+        Check Gmail for client requests
+      </button>
+
+      <p
+        class="error-text"
+        id="gmail-error"
+        hidden
+      ></p>
+
+      <div
+        class="gmail-status"
+        id="gmail-status"
+        hidden
+      ></div>
+    </section>
+
+
+    <!-- ================================================================ -->
     <!-- CLIENT EMAIL SIMULATOR                                           -->
     <!-- ================================================================ -->
 
@@ -106,7 +146,7 @@
       id="panel-email"
       aria-labelledby="email-heading"
     >
-      <h2 id="email-heading">Incoming Client Email</h2>
+      <h2 id="email-heading">Simulated Client Email</h2>
 
       <p class="panel-description">
         Simulate a client email arriving in the freelancer's inbox.
@@ -169,7 +209,7 @@
           id="email-analyze-btn"
           class="btn btn-primary"
         >
-          Process client email
+          Process simulated email
         </button>
       </form>
 
@@ -472,7 +512,7 @@
         class="result-empty"
         id="result-empty"
       >
-        Submit a client email or manual request to see the Sentinel's analysis.
+        Check Gmail or submit a simulated/manual request to see the Sentinel's analysis.
       </div>
 
     </section>

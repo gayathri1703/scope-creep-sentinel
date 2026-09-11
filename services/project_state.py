@@ -1,6 +1,6 @@
 """
-Project State - orchestration layer tying the Scope Ledger and the three
-agents together into the end-to-end workflow.
+Project State - orchestration layer tying the Scope Ledger and agents
+together into the end-to-end workflow.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from models.scope_models import (
     ScopeAnalysisResult,
 )
 
+from services.email_service import IncomingClientEmail
 from services.scope_ledger import ScopeLedger
 
 
@@ -61,15 +62,41 @@ class ProjectState:
                 MockScopeAgent,
             )
 
-            self.scope_agent = MockScopeAgent(ledger.sow)
-            self.decision_agent = MockDecisionAgent(ledger)
-            self.communication_agent = MockCommunicationAgent(
+            self.scope_agent = MockScopeAgent(
                 ledger.sow
             )
 
+            self.decision_agent = MockDecisionAgent(
+                ledger
+            )
+
+            self.communication_agent = (
+                MockCommunicationAgent(
+                    ledger.sow
+                )
+            )
+
+            # Mock mode does not need the Gemini-powered
+            # intake classifier.
+            self.intake_agent = None
+
         else:
-            self.scope_agent = ScopeAgent(model, ledger.sow)
-            self.decision_agent = DecisionAgent(model, ledger)
+            from agents.intake_agent import IntakeAgent
+
+            self.intake_agent = IntakeAgent(
+                model
+            )
+
+            self.scope_agent = ScopeAgent(
+                model,
+                ledger.sow,
+            )
+
+            self.decision_agent = DecisionAgent(
+                model,
+                ledger,
+            )
+
             self.communication_agent = CommunicationAgent(
                 model,
                 ledger.sow,
@@ -113,7 +140,6 @@ class ProjectState:
         record = ClientRequestRecord(
             request_text=request_text,
 
-            # New source metadata
             source=source,
             sender=sender,
             subject=subject,
@@ -123,18 +149,76 @@ class ProjectState:
             matched_sow_item=analysis.matched_sow_item,
             estimated_hours=analysis.estimated_hours,
             estimated_cost=cost,
-            requires_user_decision=assessment.requires_user_decision,
+            requires_user_decision=(
+                assessment.requires_user_decision
+            ),
             risk_level=assessment.risk_level,
         )
 
         return RequestOutcome(
             analysis=analysis,
             estimated_cost=cost,
-            requires_decision=assessment.requires_user_decision,
+            requires_decision=(
+                assessment.requires_user_decision
+            ),
             risk_level=assessment.risk_level.value,
-            decision_reasoning=assessment.agent_reasoning,
+            decision_reasoning=(
+                assessment.agent_reasoning
+            ),
             messages=messages,
             record=record,
+        )
+
+    def handle_incoming_email(
+        self,
+        email: IncomingClientEmail,
+    ) -> RequestOutcome | None:
+        """
+        Run a Gmail email through the Intake Agent first.
+
+        Returns:
+            RequestOutcome when the email is considered a genuine
+            client/project request.
+
+            None when the Intake Agent determines that the email
+            should not enter the scope-analysis workflow.
+        """
+
+        # In mock mode, accept the email directly so tests and the
+        # offline workflow remain deterministic.
+        if self.mock_mode:
+            return self.handle_incoming_request(
+                request_text=(
+                    f"Subject: {email.subject}\n\n"
+                    f"{email.body}"
+                ),
+                source="email",
+                sender=email.sender,
+                subject=email.subject,
+            )
+
+        if self.intake_agent is None:
+            raise RuntimeError(
+                "Intake Agent is not initialized."
+            )
+
+        intake = self.intake_agent.assess(
+            email
+        )
+
+        if not intake.is_client_request:
+            return None
+
+        request_text = (
+            f"Subject: {email.subject}\n\n"
+            f"{email.body}"
+        )
+
+        return self.handle_incoming_request(
+            request_text=request_text,
+            source="email",
+            sender=email.sender,
+            subject=email.subject,
         )
 
     def finalize_decision(
@@ -149,7 +233,8 @@ class ProjectState:
 
         # An IN_SCOPE revision consumes a revision slot.
         matched = (
-            outcome.analysis.matched_sow_item or ""
+            outcome.analysis.matched_sow_item
+            or ""
         ).lower()
 
         if (
@@ -159,4 +244,6 @@ class ProjectState:
         ):
             self.ledger.use_revision()
 
-        self.ledger.add_request(outcome.record)
+        self.ledger.add_request(
+            outcome.record
+        )

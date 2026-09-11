@@ -27,11 +27,16 @@ from api.schemas import (
 )
 from models.scope_models import DecisionOption
 from services.email_service import EmailService, IncomingClientEmail
+from services.gmail_service import GmailService
 from services.project_state import ProjectState, RequestOutcome
 from services.scope_ledger import ScopeLedger
 
 
 WEB_DIR = Path(__file__).parent.parent / "web"
+
+# Keep Gmail polling intentionally small so one check does not consume
+# the Gemini free-tier quota across the entire unread inbox.
+GMAIL_CHECK_MAX_CANDIDATES = 2
 
 
 app = FastAPI(title="Scope Creep Sentinel API")
@@ -198,6 +203,39 @@ def _analyze_request(
 
 
 # ---------------------------------------------------------------------------
+# Convert a RequestOutcome into API response
+# ---------------------------------------------------------------------------
+
+def _outcome_to_analysis_response(
+    outcome: RequestOutcome,
+) -> AnalysisResponse:
+    _pending_outcomes[outcome.record.id] = outcome
+
+    messages = None
+
+    if outcome.messages:
+        messages = GeneratedMessagesResponse(
+            bill_it=outcome.messages.bill_it,
+            negotiate_it=outcome.messages.negotiate_it,
+            decline_it=outcome.messages.decline_it,
+        )
+
+    return AnalysisResponse(
+        id=outcome.record.id,
+        request_text=outcome.record.request_text,
+        classification=outcome.analysis.classification,
+        reasoning=outcome.analysis.reasoning,
+        matched_sow_item=outcome.analysis.matched_sow_item,
+        estimated_hours=outcome.analysis.estimated_hours,
+        estimated_cost=outcome.estimated_cost,
+        risk_level=outcome.risk_level,
+        decision_reasoning=outcome.decision_reasoning,
+        requires_decision=outcome.requires_decision,
+        messages=messages,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Manual request endpoint
 # ---------------------------------------------------------------------------
 
@@ -216,7 +254,7 @@ def submit_request(
 
 
 # ---------------------------------------------------------------------------
-# Client email endpoint
+# Simulated client email endpoint
 # ---------------------------------------------------------------------------
 
 @app.post(
@@ -248,6 +286,104 @@ def submit_client_email(
         sender=email.sender,
         subject=email.subject,
     )
+
+
+# ---------------------------------------------------------------------------
+# Real Gmail intake endpoint
+# ---------------------------------------------------------------------------
+
+@app.post("/api/gmail/check")
+def check_gmail() -> dict:
+    """
+    Check a very small number of unread Gmail candidates.
+
+    Each candidate is passed through the Intake Agent first.
+
+    Non-client emails are ignored.
+
+    The endpoint stops after the first genuine client/project request
+    so a single Gmail check does not trigger many expensive model calls.
+    """
+
+    if config.MOCK_MODE:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Gmail checking requires real model mode. "
+                "Set MOCK_MODE=false and MODEL_PROVIDER=gemini."
+            ),
+        )
+
+    try:
+        gmail = GmailService()
+
+        emails = gmail.list_unread_messages(
+            max_results=GMAIL_CHECK_MAX_CANDIDATES
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Gmail check failed: {e}",
+        ) from e
+
+    processed: list[AnalysisResponse] = []
+    skipped = 0
+
+    for email in emails:
+        try:
+            outcome = _project.handle_incoming_email(
+                email
+            )
+
+        except Exception as e:
+            message = str(e)
+
+            if (
+                "quota" in message.lower()
+                or "429" in message
+                or "RESOURCE_EXHAUSTED" in message.upper()
+            ):
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        "Gemini quota was reached while checking Gmail. "
+                        "Please wait for the quota reset and try again."
+                    ),
+                ) from e
+
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Gmail message analysis failed: "
+                    f"{e}"
+                ),
+            ) from e
+
+        if outcome is None:
+            skipped += 1
+            continue
+
+        # First genuine client request found.
+        processed.append(
+            _outcome_to_analysis_response(
+                outcome
+            )
+        )
+
+        break
+
+    return {
+        "status": "ok",
+        "candidate_emails_checked": len(emails),
+        "processed_client_requests": len(processed),
+        "skipped_non_client_emails": skipped,
+        "stopped_after_first_client_request": bool(processed),
+        "results": [
+            result.model_dump()
+            for result in processed
+        ],
+    }
 
 
 # ---------------------------------------------------------------------------
