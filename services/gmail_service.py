@@ -3,11 +3,16 @@ Gmail integration for Scope Creep Sentinel.
 
 Reads Gmail messages using Google OAuth and converts them into the
 existing IncomingClientEmail format.
+
+The service also keeps a small local record of Gmail message IDs that
+have already been processed, so the same unread message is not sent
+through the agent workflow repeatedly.
 """
 
 from __future__ import annotations
 
 import base64
+import json
 import os
 from email.utils import parseaddr
 from pathlib import Path
@@ -25,16 +30,14 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 CREDENTIALS_PATH = PROJECT_ROOT / "credentials.json"
 TOKEN_PATH = PROJECT_ROOT / "token.json"
+PROCESSED_IDS_PATH = (
+    PROJECT_ROOT / "data" / "gmail_processed_ids.json"
+)
 
-# Read-only Gmail access.
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
 
-# Default Gmail search query.
-#
-# We start with unread inbox mail and exclude common Gmail categories
-# that are unlikely to contain client requests.
 DEFAULT_GMAIL_QUERY = (
     "in:inbox "
     "is:unread "
@@ -59,9 +62,11 @@ class GmailService:
         credentials: Credentials | None = None
 
         if TOKEN_PATH.exists():
-            credentials = Credentials.from_authorized_user_file(
-                str(TOKEN_PATH),
-                SCOPES,
+            credentials = (
+                Credentials.from_authorized_user_file(
+                    str(TOKEN_PATH),
+                    SCOPES,
+                )
             )
 
         if (
@@ -74,12 +79,15 @@ class GmailService:
         if not credentials or not credentials.valid:
             if not CREDENTIALS_PATH.exists():
                 raise FileNotFoundError(
-                    f"Missing Gmail OAuth credentials: {CREDENTIALS_PATH}"
+                    f"Missing Gmail OAuth credentials: "
+                    f"{CREDENTIALS_PATH}"
                 )
 
-            flow = InstalledAppFlow.from_client_secrets_file(
-                str(CREDENTIALS_PATH),
-                SCOPES,
+            flow = (
+                InstalledAppFlow.from_client_secrets_file(
+                    str(CREDENTIALS_PATH),
+                    SCOPES,
+                )
             )
 
             credentials = flow.run_local_server(
@@ -105,16 +113,15 @@ class GmailService:
         max_results: int = 10,
     ) -> list[IncomingClientEmail]:
         """
-        Return likely client emails from the unread inbox.
-
-        The Gmail query can be overridden with the
-        GMAIL_CLIENT_QUERY environment variable.
+        Return likely client emails that have not already been processed.
         """
 
         query = os.environ.get(
             "GMAIL_CLIENT_QUERY",
             DEFAULT_GMAIL_QUERY,
         ).strip()
+
+        processed_ids = self._load_processed_ids()
 
         response = (
             self._service.users()
@@ -137,6 +144,9 @@ class GmailService:
             if not message_id:
                 continue
 
+            if message_id in processed_ids:
+                continue
+
             full_message = (
                 self._service.users()
                 .messages()
@@ -148,7 +158,10 @@ class GmailService:
                 .execute()
             )
 
-            email = self._parse_message(full_message)
+            email = self._parse_message(
+                full_message,
+                message_id=message_id,
+            )
 
             if (
                 email is not None
@@ -158,16 +171,78 @@ class GmailService:
 
         return results
 
+    def mark_processed(
+        self,
+        message_id: str,
+    ) -> None:
+        """Remember that a Gmail message has been processed."""
+
+        processed_ids = self._load_processed_ids()
+
+        processed_ids.add(message_id)
+
+        self._save_processed_ids(
+            processed_ids
+        )
+
+    def _load_processed_ids(self) -> set[str]:
+        """Load locally remembered Gmail message IDs."""
+
+        if not PROCESSED_IDS_PATH.exists():
+            return set()
+
+        try:
+            raw = json.loads(
+                PROCESSED_IDS_PATH.read_text(
+                    encoding="utf-8"
+                )
+            )
+
+            if not isinstance(raw, list):
+                return set()
+
+            return {
+                str(item)
+                for item in raw
+                if str(item).strip()
+            }
+
+        except (
+            OSError,
+            json.JSONDecodeError,
+            TypeError,
+            ValueError,
+        ):
+            return set()
+
+    def _save_processed_ids(
+        self,
+        processed_ids: set[str],
+    ) -> None:
+        """Persist Gmail message IDs locally."""
+
+        PROCESSED_IDS_PATH.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        PROCESSED_IDS_PATH.write_text(
+            json.dumps(
+                sorted(processed_ids),
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
     def _is_likely_client_email(
         self,
         email: IncomingClientEmail,
     ) -> bool:
         """
         Reject obvious automated/newsletter messages before they reach
-        the Strands analysis workflow.
+        the Strands workflow.
 
-        This is only a pre-filter. The agent will make the final decision
-        about whether a candidate contains a project-related request.
+        The Intake Agent still makes the final client-request decision.
         """
 
         sender = email.sender.lower().strip()
@@ -214,35 +289,62 @@ class GmailService:
     def _parse_message(
         self,
         message: dict[str, Any],
+        message_id: str | None = None,
     ) -> IncomingClientEmail | None:
         """
         Convert a Gmail message payload into IncomingClientEmail.
         """
 
-        payload = message.get("payload", {})
-        headers = payload.get("headers", [])
+        payload = message.get(
+            "payload",
+            {},
+        )
+
+        headers = payload.get(
+            "headers",
+            [],
+        )
 
         sender = ""
         subject = ""
 
         for header in headers:
-            name = header.get("name", "").lower()
-            value = header.get("value", "")
+            name = header.get(
+                "name",
+                "",
+            ).lower()
+
+            value = header.get(
+                "value",
+                "",
+            )
 
             if name == "from":
-                sender = parseaddr(value)[1] or value
+                sender = (
+                    parseaddr(value)[1]
+                    or value
+                )
 
             elif name == "subject":
                 subject = value
 
-        body = self._extract_body(payload)
+        body = self._extract_body(
+            payload
+        )
 
         if not body.strip():
             return None
 
         return IncomingClientEmail(
-            sender=sender or "unknown@example.com",
-            subject=subject or "(No subject)",
+            message_id=message_id,
+            sender=(
+                sender
+                or "unknown@example.com"
+            ),
+            subject=(
+                subject
+                or "(No subject)"
+            ),
             body=body.strip(),
         )
 
@@ -250,42 +352,61 @@ class GmailService:
         self,
         payload: dict[str, Any],
     ) -> str:
-        """
-        Extract plain-text email content.
+        """Extract plain-text email content."""
 
-        Prefer text/plain when available.
-        """
+        mime_type = payload.get(
+            "mimeType",
+            "",
+        )
 
-        mime_type = payload.get("mimeType", "")
-        body_data = payload.get("body", {}).get("data")
+        body_data = (
+            payload
+            .get("body", {})
+            .get("data")
+        )
 
         if body_data and (
             mime_type == "text/plain"
             or not payload.get("parts")
         ):
-            return self._decode_body(body_data)
+            return self._decode_body(
+                body_data
+            )
 
-        for part in payload.get("parts", []):
-            part_type = part.get("mimeType", "")
+        for part in payload.get(
+            "parts",
+            [],
+        ):
+            part_type = part.get(
+                "mimeType",
+                "",
+            )
 
             if part_type == "text/plain":
                 part_data = (
-                    part.get("body", {})
+                    part
+                    .get("body", {})
                     .get("data")
                 )
 
                 if part_data:
-                    return self._decode_body(part_data)
+                    return self._decode_body(
+                        part_data
+                    )
 
-            nested_parts = part.get("parts")
+            nested_parts = part.get(
+                "parts"
+            )
 
             if nested_parts:
                 nested_payload = {
                     "parts": nested_parts,
                 }
 
-                nested_text = self._extract_body(
-                    nested_payload
+                nested_text = (
+                    self._extract_body(
+                        nested_payload
+                    )
                 )
 
                 if nested_text.strip():
@@ -294,17 +415,19 @@ class GmailService:
         return ""
 
     @staticmethod
-    def _decode_body(data: str) -> str:
-        """
-        Decode Gmail's URL-safe base64 message body.
-        """
+    def _decode_body(
+        data: str,
+    ) -> str:
+        """Decode Gmail's URL-safe base64 body."""
 
         padding = "=" * (
             (-len(data)) % 4
         )
 
-        decoded = base64.urlsafe_b64decode(
-            data + padding
+        decoded = (
+            base64.urlsafe_b64decode(
+                data + padding
+            )
         )
 
         return decoded.decode(

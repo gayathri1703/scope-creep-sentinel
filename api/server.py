@@ -361,7 +361,17 @@ def check_gmail() -> dict:
             ) from e
 
         if outcome is None:
+            # Intake Agent rejected this email as non-client mail.
             skipped += 1
+
+            # We still mark it processed so the same newsletter,
+            # automated notification, or unrelated message doesn't
+            # get screened again on the next Gmail check.
+            if email.message_id:
+                gmail.mark_processed(
+                    email.message_id
+                )
+
             continue
 
         # First genuine client request found.
@@ -370,6 +380,13 @@ def check_gmail() -> dict:
                 outcome
             )
         )
+
+        # Mark the Gmail message as processed only after the
+        # Intake Agent accepted it and the project workflow completed.
+        if email.message_id:
+            gmail.mark_processed(
+                email.message_id
+            )
 
         break
 
