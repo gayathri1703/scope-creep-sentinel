@@ -276,4 +276,4 @@ https://github.com/gayathri1703/scope-creep-sentinel
 
 ## 📄 License
 
-No `LICENSE` file currently exists in this repository. Add one (e.g. MIT, Apache-2.0) at the repo root and reference it here before publishing the submission.
+This project is licensed under the [MIT License](LICENSE).
