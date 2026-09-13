@@ -1,204 +1,54 @@
-# Scope Creep Sentinel
+# 🛡️ Scope Creep Sentinel
 
-**AI-powered scope management for freelancers, consultants, and small agencies.**
+**Protecting freelancers from silent scope expansion.**
 
-Scope Creep Sentinel watches client requests against a project's Statement of Work (SOW), detects potential scope creep, estimates the additional effort and cost, evaluates accumulated project risk, and gives the human decision-maker clear response options.
+Scope Creep Sentinel is an AI negotiation copilot for freelancers and small agencies, built for the **AWS Agents for Humans Hackathon**. It reads a project's Statement of Work (SOW), watches incoming client requests, and only interrupts the freelancer when there's a genuine scope decision to make — instead of letting "small" requests quietly turn into unpaid work.
 
-Instead of allowing "small" client requests to quietly become unpaid work, the system creates a structured decision point.
-
-Built for the **AWS Agents for Humans Hackathon 2026 — Professional Agents track**.
-
----
-
-## The Problem
-
-Freelancers and small agencies often lose money through scope creep.
-
-A request such as:
-
-> "Can you also add a loyalty program?"
-
-may look like a small change, but it can introduce significant additional development work.
-
-The problem is not simply identifying whether a request is inside or outside the contract.
-
-The real problem is answering:
-
-- Is this request covered by the SOW?
-- How much additional effort could it require?
-- What is the financial impact?
-- How much scope creep has already accumulated?
-- Does the freelancer need to make a decision?
-- What should they tell the client?
-
-Scope Creep Sentinel turns those questions into one workflow.
+🔗 **Live demo:** https://sc-8d5ba400a3eb4e528a5556d780e30bea.ecs.ap-south-1.on.aws/
+📦 **Repository:** https://github.com/gayathri1703/scope-creep-sentinel
 
 ---
 
-# What Scope Creep Sentinel Does
+## 🧠 What it does
 
-The system:
+For every incoming client request, Scope Creep Sentinel:
 
-1. Loads a structured Statement of Work.
-2. Receives a client request.
-3. Uses a **Strands Scope Agent** to classify the request:
-   - `IN_SCOPE`
-   - `GRAY_AREA`
-   - `OUT_OF_SCOPE`
-4. Estimates additional effort.
-5. Calculates cost deterministically from the hourly rate.
-6. Uses a **Strands Decision Agent** to evaluate risk using the project's accumulated scope history.
-7. Generates three possible client responses:
-   - Bill it
-   - Negotiate it
-   - Decline it
-8. Lets the human make the final decision.
-9. Persists the request and decision in the Scope Ledger.
-10. Updates cumulative scope-creep and financial-risk metrics.
+1. Classifies it against the SOW as **IN_SCOPE**, **GRAY_AREA**, or **OUT_OF_SCOPE**
+2. Estimates the additional effort and cost involved
+3. Assesses cumulative scope-creep risk using the project's history
+4. Decides whether the freelancer actually needs to intervene
+5. If so, drafts three ready-to-send client responses and lets the human choose:
 
----
+| Action | What it does |
+|---|---|
+| 💚 **Bill it** | Frame the request as a billable add-on |
+| 🟠 **Negotiate it** | Open a conversation about scope/timeline trade-offs |
+| ❤️ **Decline it** | Politely decline without sounding unhelpful |
 
-# Why This Is an Agent
+## 🙋 Human-in-the-loop, by design
 
-This is not a chatbot that simply answers a question.
+Scope Creep Sentinel never sends a message or commits to a decision on its own. It only classifies, estimates, and recommends — a human always makes the final call (Bill / Negotiate / Decline) before anything is logged as "sent." Requests that are clearly in scope and within limits are logged automatically without interrupting anyone; only genuine scope decisions reach the human.
 
-The system maintains project state and uses multiple specialized agents.
+## 🔄 Architecture & workflow
 
-### 1. Intake Agent
+Three focused Strands agents, each with one responsibility:
 
-Used for the real Gmail workflow.
+| Agent | Responsibility |
+|---|---|
+| `ScopeAgent` | Classify a request against the SOW, estimate effort |
+| `DecisionAgent` | Judge whether to interrupt the freelancer + risk level, using a ledger-lookup tool |
+| `CommunicationAgent` | Draft the three client-facing messages |
 
-Its job is to determine whether an incoming email is actually a client/project request.
+## 🛠️ Tech stack
 
-Examples:
+| Layer | Technology |
+|---|---|
+| Agent framework | [Strands Agents SDK](https://github.com/strands-agents) (Python) |
+| LLM provider | Amazon Bedrock — Claude Sonnet 4.6 (`ap-south-1`) |
+| Backend API | FastAPI + Uvicorn |
+| Data models | Pydantic |
+| Frontend | Vanilla HTML / CSS / JavaScript (served as static files by FastAPI, no build step) |
+| Testing | pytest |
+| AWS access | `boto3`, via existing AWS CLI credentials |
 
-- Newsletter → ignore
-- Marketing email → ignore
-- Deployment notification → ignore
-- "Can you add a mobile app?" → forward for scope analysis
-
-The Intake Agent produces structured output rather than free-form text.
-
----
-
-### 2. Scope Agent
-
-The Scope Agent evaluates the request against the project's Statement of Work.
-
-It determines:
-
-- classification
-- reasoning
-- matched SOW item
-- estimated effort
-- estimate confidence
-
-The agent is given the SOW context and project history.
-
----
-
-### 3. Decision Agent
-
-The Decision Agent determines whether the freelancer needs to be interrupted.
-
-It also assigns:
-
-- `LOW`
-- `MEDIUM`
-- `HIGH`
-
-risk.
-
-The agent has access to a **ledger lookup tool** that lets it retrieve current project numbers such as:
-
-- accumulated unbilled hours
-- accumulated unbilled cost
-- scope-creep request count
-- remaining revision slots
-
-This means the agent can determine what project information it needs before making its risk assessment.
-
----
-
-### 4. Communication Agent
-
-The Communication Agent generates three client-facing response options:
-
-- **Bill it**
-- **Negotiate it**
-- **Decline it**
-
-The human remains in control of the final decision.
-
----
-
-# Architecture
-
-```text
-                         ┌───────────────────────┐
-                         │      Client Email     │
-                         └───────────┬───────────┘
-                                     │
-                                     ▼
-                         ┌───────────────────────┐
-                         │      Gmail API        │
-                         │    OAuth / Read-only  │
-                         └───────────┬───────────┘
-                                     │
-                                     ▼
-                         ┌───────────────────────┐
-                         │   Gmail Pre-filter    │
-                         │  Remove obvious spam  │
-                         │  / automated mail     │
-                         └───────────┬───────────┘
-                                     │
-                                     ▼
-                         ┌───────────────────────┐
-                         │     Intake Agent      │
-                         │       Strands         │
-                         │  Client request?      │
-                         └───────────┬───────────┘
-                                     │
-                            genuine request
-                                     │
-                                     ▼
-┌───────────────────────┐  ┌───────────────────────┐
-│   Statement of Work   │─▶│      Scope Agent      │
-│         SOW           │  │       Strands         │
-└───────────────────────┘  └───────────┬───────────┘
-                                      │
-                                      ▼
-                           classification + effort
-                                      │
-                                      ▼
-                         ┌───────────────────────┐
-                         │    Decision Agent     │
-                         │       Strands         │
-                         │   + Ledger Tool       │
-                         └───────────┬───────────┘
-                                     │
-                                     ▼
-                         ┌───────────────────────┐
-                         │ Communication Agent   │
-                         │       Strands         │
-                         └───────────┬───────────┘
-                                     │
-                      ┌──────────────┼──────────────┐
-                      ▼              ▼              ▼
-                   Bill It       Negotiate       Decline
-                      │              │              │
-                      └──────────────┼──────────────┘
-                                     ▼
-                              Human Decision
-                                     │
-                                     ▼
-                         ┌───────────────────────┐
-                         │     Scope Ledger      │
-                         │ Persistent History    │
-                         └───────────┬───────────┘
-                                     │
-                                     ▼
-                         ┌───────────────────────┐
-                         │       Dashboard       │
-                         │ Risk / Cost / History │
-                         └───────────────────────┘
+## 📁 Project structure
