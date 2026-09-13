@@ -52,3 +52,97 @@ Three focused Strands agents, each with one responsibility:
 | AWS access | `boto3`, via existing AWS CLI credentials |
 
 ## 📁 Project structure
+Scope-Creep-Sentinel/
+├── main.py # CLI entry point (simulated client messages)
+├── config.py # Shared bootstrap: MOCK_MODE, Bedrock model, paths
+├── requirements.txt
+├── README.md
+├── .gitignore
+├── agents/
+│ ├── scope_agent.py # Real Strands agent: SOW-aware classification
+│ ├── decision_agent.py # Real Strands agent + tool: risk/intervention judgment
+│ ├── communication_agent.py # Real Strands agent: drafts client messages
+│ └── mock_agents.py # Deterministic stand-ins used when MOCK_MODE=true
+├── models/
+│ └── scope_models.py # Pydantic domain models & structured-output schemas
+├── services/
+│ ├── scope_ledger.py # Persistence + arithmetic (no LLM calls)
+│ └── project_state.py # Orchestrates the ledger + the three agents
+├── api/
+│ ├── schemas.py # API request/response models
+│ └── server.py # FastAPI app — serves the dashboard + REST endpoints
+├── web/
+│ ├── index.html # Dashboard UI
+│ ├── styles.css
+│ └── app.js
+├── data/
+│ └── sample_sow.json # Example Statement of Work
+└── tests/
+├── test_scope_ledger.py
+└── test_mock_mode.py
+
+
+## ✅ Prerequisites
+
+- Python 3.12+
+- An AWS account with Amazon Bedrock access (only required if running with real agents — see `MOCK_MODE` below)
+- AWS CLI configured (`aws configure` or `aws sso login`) with credentials that can call Bedrock in `ap-south-1`
+
+## 🚀 How to run locally (Windows PowerShell)
+
+```powershell
+# 1. Clone the repository
+git clone https://github.com/gayathri1703/scope-creep-sentinel.git
+cd scope-creep-sentinel
+
+# 2. Create and activate a virtual environment
+python -m venv .venv
+.venv\Scripts\activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+```
+
+### Environment variables
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `MOCK_MODE` | `true` runs on deterministic mock agents with no Bedrock/AWS calls. `false` uses the real Strands/Bedrock pipeline. | `true` |
+
+```powershell
+# Run fully offline, no AWS calls:
+$env:MOCK_MODE="true"
+
+# Run against real Bedrock agents (requires valid AWS credentials):
+$env:MOCK_MODE="false"
+```
+
+> ⚠️ **Never commit AWS keys, secrets, or `.env` files to GitHub.** This project reads credentials exclusively from your local AWS CLI configuration — nothing is hard-coded anywhere in the codebase, and nothing should be added.
+
+### Start the application
+
+```powershell
+uvicorn api.server:app --reload --port 8000
+```
+
+Open your browser at:
+
+http://127.0.0.1:8000/
+
+The CLI is also available as a second, independent entry point onto the same backend:
+
+```powershell
+python main.py
+```
+
+## 🧪 Testing
+
+```powershell
+pytest tests/ -v
+```
+
+Covers the Scope Ledger's persistence/arithmetic logic and the full mock-mode workflow (classification → cost calculation → ledger updates) — no AWS access required to run the suite.
+
+## 📄 License
+
+No `LICENSE` file currently exists in this repository. Add one (e.g. MIT, Apache-2.0) at the repo root and reference it here before publishing the submission.
