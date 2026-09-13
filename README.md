@@ -1,23 +1,41 @@
+````markdown
 # 🛡️ Scope Creep Sentinel
 
 **Protecting freelancers from silent scope expansion.**
 
-Scope Creep Sentinel is an AI negotiation copilot for freelancers and small agencies, built for the **AWS Agents for Humans Hackathon**. It reads a project's Statement of Work (SOW), watches incoming client requests, and only interrupts the freelancer when there's a genuine scope decision to make — instead of letting "small" requests quietly turn into unpaid work.
+An AI negotiation copilot for freelancers and small agencies, built for the **AWS Agents for Humans Hackathon**. It reads incoming client emails, compares requests against the project's Statement of Work (SOW), and only interrupts the freelancer when there's a genuine scope decision to make.
 
 🔗 **Live demo:** https://sc-8d5ba400a3eb4e528a5556d780e30bea.ecs.ap-south-1.on.aws/
 📦 **Repository:** https://github.com/gayathri1703/scope-creep-sentinel
 
 ---
 
-## 🧠 What it does
+## 📌 Project overview
 
-For every incoming client request, Scope Creep Sentinel:
+Freelancers and small agencies routinely lose money to **scope creep** — the slow drift of "just one more small thing" requests that fall outside the original agreement. Individually these requests feel too minor to push back on; cumulatively, they add up to hours of unpaid work.
 
-1. Classifies it against the SOW as **IN_SCOPE**, **GRAY_AREA**, or **OUT_OF_SCOPE**
-2. Estimates the additional effort and cost involved
-3. Assesses cumulative scope-creep risk using the project's history
-4. Decides whether the freelancer actually needs to intervene
-5. If so, drafts three ready-to-send client responses and lets the human choose:
+Scope Creep Sentinel watches incoming client emails, checks each request against the SOW, and gives the freelancer exactly what they need to make a fast, informed call — without having to reread the contract or eyeball an hourly estimate every time.
+
+## ❗ Problem
+
+- Client requests arrive informally, usually by email, with no reference back to the SOW.
+- Freelancers either say yes reflexively (and quietly absorb the cost) or have to manually cross-check every request against the agreement.
+- There's no running record of how much unbilled "extra" work has accumulated over the life of a project.
+
+## ✅ Solution
+
+Scope Creep Sentinel automates the first two steps of that judgment call — reading the request and checking it against the agreement — and hands the freelancer a clear, three-way decision instead of a wall of email.
+
+## ⚙️ What it does
+
+For every incoming client request, the system:
+
+1. Filters genuine client/project requests out of the inbox
+2. Classifies the request against the SOW as **IN_SCOPE**, **GRAY_AREA**, or **OUT_OF_SCOPE**
+3. Estimates the additional effort involved and calculates cost deterministically
+4. Evaluates cumulative scope-creep risk using the project's history
+5. Decides whether the freelancer actually needs to intervene
+6. If so, drafts three ready-to-send client responses and lets the human choose:
 
 | Action | What it does |
 |---|---|
@@ -25,115 +43,161 @@ For every incoming client request, Scope Creep Sentinel:
 | 🟠 **Negotiate it** | Open a conversation about scope/timeline trade-offs |
 | ❤️ **Decline it** | Politely decline without sounding unhelpful |
 
-## 🙋 Human-in-the-loop, by design
+## 🔄 Agentic workflow
 
-Scope Creep Sentinel never sends a message or commits to a decision on its own. It only classifies, estimates, and recommends — a human always makes the final call (Bill / Negotiate / Decline) before anything is logged as "sent." Requests that are clearly in scope and within limits are logged automatically without interrupting anyone; only genuine scope decisions reach the human.
+````
+Gmail inbox
+     │
+     ▼
+Intake Agent — filters genuine client/project requests
+     │
+     ▼
+Scope Agent — classifies against the SOW, estimates effort
+     │
+     ▼
+Deterministic cost calculation (Python, not the LLM)
+     │
+     ▼
+Decision Agent — checks scope-ledger history, assesses risk,
+                 decides whether the freelancer must intervene
+     │
+     ├─ clearly in scope ──────────► logged automatically
+     │
+     └─ needs a decision
+              │
+              ▼
+     Communication Agent — drafts Bill / Negotiate / Decline messages
+              │
+              ▼
+        human picks one
+              │
+              ▼
+     Scope Ledger records the outcome
+````
 
-## 🔄 Architecture & workflow
-
-Three focused Strands agents, each with one responsibility:
+## 🤖 Specialized agents
 
 | Agent | Responsibility |
 |---|---|
-| `ScopeAgent` | Classify a request against the SOW, estimate effort |
-| `DecisionAgent` | Judge whether to interrupt the freelancer + risk level, using a ledger-lookup tool |
-| `CommunicationAgent` | Draft the three client-facing messages |
+| **Intake Agent** | Filters incoming email candidates, separating genuine client/project requests from marketing, newsletters, and other promotional noise |
+| **Scope Agent** | Compares the client request against the SOW, classifies it as IN_SCOPE / GRAY_AREA / OUT_OF_SCOPE, estimates additional effort, and identifies the matching SOW item when applicable |
+| **Decision Agent** | Uses the project's scope ledger/history to evaluate accumulated scope-creep exposure, determine risk level, and decide whether human intervention is required |
+| **Communication Agent** | Generates client-ready responses for Bill, Negotiate, or Decline |
 
-## 🛠️ Tech stack
+## 🙋 Human-in-the-loop
+
+Scope Creep Sentinel never sends a message or commits to a decision on its own. It classifies, estimates, and recommends — a human always makes the final call before anything is sent. Requests that are clearly in scope are logged automatically without interrupting anyone; only genuine scope decisions reach the freelancer.
+
+## 🧮 Deterministic cost calculation
+
+Dollar amounts are never generated by the model — they're computed directly in Python so the numbers are always exact and auditable:
+
+````
+Estimated Cost = Estimated Hours × Hourly Rate
+
+Example: 25 hours × $75/hour = $1,875
+````
+
+## 📧 Gmail integration
+
+Client-email intake and request filtering are handled through:
+
+- `services/gmail_service.py`
+- `services/email_service.py`
+- `agents/intake_agent.py`
+
+## 🛠️ Technology stack
 
 | Layer | Technology |
 |---|---|
-| Agent framework | [Strands Agents SDK](https://github.com/strands-agents) (Python) |
-| LLM provider | Amazon Bedrock — Claude Sonnet 4.6 (`ap-south-1`) |
+| Agent framework | Strands Agents SDK (Python), Gemini integration |
+| LLM provider | Google Gemini — `gemini-3.6-flash` |
 | Backend API | FastAPI + Uvicorn |
 | Data models | Pydantic |
-| Frontend | Vanilla HTML / CSS / JavaScript (served as static files by FastAPI, no build step) |
+| Email integration | Gmail API (`google-api-python-client`, `google-auth-httplib2`, `google-auth-oauthlib`) |
+| Frontend | HTML / CSS / JavaScript, served as static files by FastAPI |
 | Testing | pytest |
-| AWS access | `boto3`, via existing AWS CLI credentials |
+| Containerization | Docker |
+| Cloud deployment | Amazon ECS (Express Mode), Amazon ECR, AWS Secrets Manager |
 
-## 📁 Project structure
-Scope-Creep-Sentinel/
-├── main.py # CLI entry point (simulated client messages)
-├── config.py # Shared bootstrap: MOCK_MODE, Bedrock model, paths
-├── requirements.txt
-├── README.md
-├── .gitignore
-├── agents/
-│ ├── scope_agent.py # Real Strands agent: SOW-aware classification
-│ ├── decision_agent.py # Real Strands agent + tool: risk/intervention judgment
-│ ├── communication_agent.py # Real Strands agent: drafts client messages
-│ └── mock_agents.py # Deterministic stand-ins used when MOCK_MODE=true
-├── models/
-│ └── scope_models.py # Pydantic domain models & structured-output schemas
-├── services/
-│ ├── scope_ledger.py # Persistence + arithmetic (no LLM calls)
-│ └── project_state.py # Orchestrates the ledger + the three agents
-├── api/
-│ ├── schemas.py # API request/response models
-│ └── server.py # FastAPI app — serves the dashboard + REST endpoints
-├── web/
-│ ├── index.html # Dashboard UI
-│ ├── styles.css
-│ └── app.js
-├── data/
-│ └── sample_sow.json # Example Statement of Work
-└── tests/
-├── test_scope_ledger.py
-└── test_mock_mode.py
+## ☁️ AWS deployment
 
+The application runs as a Docker container deployed via **Amazon ECS Express Mode** in `ap-south-1`. The container image is stored in **Amazon ECR**. The deployed instance runs with:
 
-## ✅ Prerequisites
+````
+MODEL_PROVIDER=gemini
+MOCK_MODE=false
+````
 
-- Python 3.12+
-- An AWS account with Amazon Bedrock access (only required if running with real agents — see `MOCK_MODE` below)
-- AWS CLI configured (`aws configure` or `aws sso login`) with credentials that can call Bedrock in `ap-south-1`
+The Gemini API key used in production is stored in **AWS Secrets Manager** — it is never baked into the Docker image or committed to the repository.
 
-## 🚀 How to run locally (Windows PowerShell)
+---
+
+## 🖥️ How to Run Locally
+
+### 1. Clone the repository
 
 ```powershell
-# 1. Clone the repository
 git clone https://github.com/gayathri1703/scope-creep-sentinel.git
 cd scope-creep-sentinel
+```
 
-# 2. Create and activate a virtual environment
+### 2. Create a virtual environment
+
+```powershell
 python -m venv .venv
-.venv\Scripts\activate
+```
 
-# 3. Install dependencies
+### 3. Activate the virtual environment
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+### 4. Install dependencies
+
+```powershell
 pip install -r requirements.txt
 ```
 
-### Environment variables
-
-| Variable | Purpose | Default |
-|---|---|---|
-| `MOCK_MODE` | `true` runs on deterministic mock agents with no Bedrock/AWS calls. `false` uses the real Strands/Bedrock pipeline. | `true` |
+### 5. Configure environment variables
 
 ```powershell
-# Run fully offline, no AWS calls:
-$env:MOCK_MODE="true"
-
-# Run against real Bedrock agents (requires valid AWS credentials):
+$env:MODEL_PROVIDER="gemini"
 $env:MOCK_MODE="false"
+$env:GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
 ```
 
-> ⚠️ **Never commit AWS keys, secrets, or `.env` files to GitHub.** This project reads credentials exclusively from your local AWS CLI configuration — nothing is hard-coded anywhere in the codebase, and nothing should be added.
+Replace `YOUR_GEMINI_API_KEY` with your own Gemini API key.
 
-### Start the application
+> ⚠️ **Never commit API keys, `credentials.json`, `token.json`, or `.env` files to GitHub.** Set them as local environment variables (as above) or through your deployment platform's secrets manager — never hard-code them anywhere in the codebase.
+
+### 6. Run the application
 
 ```powershell
-uvicorn api.server:app --reload --port 8000
+uvicorn api.server:app --host 0.0.0.0 --port 8080
 ```
 
-Open your browser at:
+### 7. Open it in your browser
 
-http://127.0.0.1:8000/
+````
+http://localhost:8080
+````
 
-The CLI is also available as a second, independent entry point onto the same backend:
+## 🐳 Docker
+
+The project includes a `Dockerfile` and `.dockerignore`.
 
 ```powershell
-python main.py
+docker build -t scope-creep-sentinel .
+docker run -p 8080:8080 \
+  -e MODEL_PROVIDER=gemini \
+  -e MOCK_MODE=false \
+  -e GEMINI_API_KEY="YOUR_GEMINI_API_KEY" \
+  scope-creep-sentinel
 ```
+
+Then open `http://localhost:8080`.
 
 ## 🧪 Testing
 
@@ -141,8 +205,77 @@ python main.py
 pytest tests/ -v
 ```
 
-Covers the Scope Ledger's persistence/arithmetic logic and the full mock-mode workflow (classification → cost calculation → ledger updates) — no AWS access required to run the suite.
+Covers:
+- `tests/test_scope_ledger.py`
+- `tests/test_mock_mode.py`
+
+## 🔒 Security
+
+- `.env`, `credentials.json`, and `token.json` are all Git-ignored — never commit real credentials.
+- `data/history_*.json` (runtime project history) is Git-ignored.
+- `.dockerignore` keeps credentials and unnecessary local files out of the Docker build context.
+- In production, the Gemini API key is stored in **AWS Secrets Manager**, not in environment files or the container image.
+
+## 📁 Project structure
+
+````
+scope-creep-sentinel/
+├── agents/
+│   ├── communication_agent.py
+│   ├── decision_agent.py
+│   ├── intake_agent.py
+│   ├── mock_agents.py
+│   └── scope_agent.py
+├── api/
+│   ├── schemas.py
+│   └── server.py
+├── config.py
+├── data/
+│   ├── sample_sow.json
+│   └── history_ecommerce_website.json
+├── models/
+│   └── scope_models.py
+├── services/
+│   ├── email_service.py
+│   ├── gmail_service.py
+│   ├── project_state.py
+│   └── scope_ledger.py
+├── tests/
+│   ├── test_mock_mode.py
+│   └── test_scope_ledger.py
+├── web/
+│   ├── app.js
+│   ├── index.html
+│   └── styles.css
+├── main.py
+├── requirements.txt
+├── Dockerfile
+├── .dockerignore
+├── .gitignore
+├── secret-policy.json
+└── README.md
+````
+
+## 🌟 Why it's different
+
+Most "AI scope checkers" would just be a single prompt comparing two blocks of text. Scope Creep Sentinel is built as a pipeline of specialized agents, each with one job — intake filtering, scope classification, risk judgment, and communication drafting — with deterministic Python arithmetic for anything involving money, and a human always making the final call.
+
+## 🚧 Future improvements
+
+- Support for multiple concurrent projects/SOWs in a single dashboard
+- Slack/Teams intake in addition to Gmail
+- Configurable per-client risk thresholds
+- Exportable scope-creep reports for client billing conversations
+
+## 🔗 Live demo
+
+https://sc-8d5ba400a3eb4e528a5556d780e30bea.ecs.ap-south-1.on.aws/
+
+## 📦 GitHub repository
+
+https://github.com/gayathri1703/scope-creep-sentinel
 
 ## 📄 License
 
 No `LICENSE` file currently exists in this repository. Add one (e.g. MIT, Apache-2.0) at the repo root and reference it here before publishing the submission.
+````
